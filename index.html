@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>萬年曆 - 做二休二班表 (2026)</title>
     <style>
         :root {
@@ -95,9 +95,10 @@
             background-color: #1a252f;
         }
 
+        /* 核心日曆網格：使用 minmax(0, 1fr) 防止內容撐破格子 */
         .calendar-grid {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 8px;
         }
 
@@ -128,6 +129,7 @@
             border: 2px solid transparent;
             padding: 4px;
             box-sizing: border-box;
+            min-width: 0; /* 允許格子縮小 */
         }
 
         .day-cell:hover {
@@ -225,12 +227,56 @@
         .color-box.rest { background-color: var(--rest-bg); border-color: var(--rest-border); }
         .color-box.today { background-color: #fff; border: 3px solid var(--today-border); }
 
+        /* ========== 手機版專屬優化 ========== */
         @media (max-width: 600px) {
-            .day-number { font-size: 1rem; }
-            .shift-badge { font-size: 0.55rem; padding: 1px 3px; }
-            .shift-type-badge { font-size: 0.5rem; }
-            .header h2 { font-size: 1.4rem; }
-            .nav-buttons button { padding: 6px 10px; font-size: 0.9rem; }
+            body { padding: 8px; } /* 減少外圍留白 */
+            .calendar-container { padding: 12px; } /* 減少容器內距 */
+            
+            .header { 
+                flex-direction: column; 
+                align-items: stretch; 
+                gap: 8px; 
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+            }
+            .header h2 { font-size: 1.3rem; text-align: center; }
+            .shift-info { text-align: center; font-size: 0.8rem; }
+            .nav-buttons { justify-content: center; }
+            .nav-buttons button { padding: 6px 12px; font-size: 0.85rem; }
+            
+            .calendar-grid { gap: 3px; } /* 縮小格子間距 */
+            .weekday-header { font-size: 0.8rem; padding: 5px 0; }
+            
+            .day-cell {
+                aspect-ratio: auto; /* 取消正方形，改用內容撐高 */
+                min-height: 52px; /* 給予最小高度，確保美觀 */
+                padding: 2px 0;
+                border-width: 1px;
+            }
+            
+            .day-number { font-size: 0.95rem; }
+            
+            /* 縮小標籤，避免撐破格子 */
+            .shift-badge { 
+                font-size: 0.5rem; 
+                padding: 1px 3px; 
+                margin-top: 2px;
+                border-radius: 3px;
+            }
+            .shift-type-badge { 
+                font-size: 0.45rem; 
+                margin-top: 1px;
+            }
+            
+            .day-cell.today { border-width: 2px !important; }
+            
+            /* 圖例改為垂直排列，節省寬度 */
+            .legend { 
+                flex-direction: column; 
+                align-items: center; 
+                gap: 8px; 
+                font-size: 0.8rem; 
+            }
         }
     </style>
 </head>
@@ -276,17 +322,14 @@
     let currentYear, currentMonth;
 
     // 【核心邏輯】做二休二的基準日
-    // 依照您的指示：10/1 休、10/2 休、10/3 班、10/4 班，並持續循環
-    const BASE_DATE = new Date(2026, 9, 1); // 2026年10月1日 (月份從0開始，9代表10月)
+    const BASE_DATE = new Date(2026, 9, 1); // 2026年10月1日
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
     // 【班別輪替】早班、大夜班基準點
-    // 依照您的指示：12月開始是早班（五個月：12、1、2、3、4），接著五個月夜班（5、6、7、8、9）
     const SHIFT_ANCHOR_YEAR = 2026;
-    const SHIFT_ANCHOR_MONTH = 11; // 0-indexed，11代表12月
+    const SHIFT_ANCHOR_MONTH = 11; // 11代表12月
     const SHIFT_CYCLE_MONTHS = 5;  // 每5個月輪替一次
 
-    // 初始化
     function init() {
         const today = new Date();
         currentYear = today.getFullYear();
@@ -295,33 +338,21 @@
         bindEvents();
     }
 
-    // 判斷某一天是上班還是休假 (單純的做二休二)
     function getShiftStatus(date) {
         const diffTime = date.getTime() - BASE_DATE.getTime();
         const diffDays = Math.round(diffTime / MS_PER_DAY);
-        
-        // 基準日 Day 0 = 休, Day 1 = 休, Day 2 = 班, Day 3 = 班
-        // 使用 ((n % 4) + 4) % 4 確保負數天數也能正確取餘數
         let mod = ((diffDays % 4) + 4) % 4;
-        
-        // 0, 1 是休假；2, 3 是上班
         return (mod === 0 || mod === 1) ? 'rest' : 'work';
     }
 
-    // 判斷該月是早班還是大夜班
     function getShiftType(year, month) {
         const monthIndex = year * 12 + month;
         const anchorIndex = SHIFT_ANCHOR_YEAR * 12 + SHIFT_ANCHOR_MONTH;
-        
         const diff = monthIndex - anchorIndex;
-        
-        // 週期為 5個月早班 + 5個月夜班 = 10個月一個大循環
         let cycle = ((diff % (SHIFT_CYCLE_MONTHS * 2)) + (SHIFT_CYCLE_MONTHS * 2)) % (SHIFT_CYCLE_MONTHS * 2);
-        
         return cycle < SHIFT_CYCLE_MONTHS ? 'early' : 'night';
     }
 
-    // 渲染日曆
     function renderCalendar(year, month) {
         const grid = document.getElementById('calendarGrid');
         grid.innerHTML = ''; 
@@ -359,12 +390,11 @@
             
             const status = getShiftStatus(date);
             
-            // 根據狀態與當月班別決定 CSS class
             let cellClass = 'day-cell ';
             if (status === 'rest') {
                 cellClass += 'rest';
             } else {
-                cellClass += shiftType; // 上班的話，看是 'early' 還是 'night'
+                cellClass += shiftType;
             }
             dayCell.className = cellClass;
             
@@ -384,7 +414,6 @@
 
             const typeBadge = document.createElement('div');
             typeBadge.className = 'shift-type-badge';
-            // 根據當月班別顯示早/夜
             typeBadge.textContent = status === 'work' ? (shiftType === 'early' ? '早' : '夜') : (shiftType === 'early' ? '早休' : '夜休');
             dayCell.appendChild(typeBadge);
 
