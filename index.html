@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>萬年曆 - 做二休二班表 (2026)</title>
+    <!-- 引入 html2canvas 用於生成桌布 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <style>
         :root {
             --primary: #2c3e50;
@@ -78,6 +80,7 @@
         .nav-buttons {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .nav-buttons button {
@@ -95,7 +98,14 @@
             background-color: #1a252f;
         }
 
-        /* 核心日曆網格：使用 minmax(0, 1fr) 防止內容撐破格子 */
+        .nav-buttons button#downloadWallpaperBtn {
+            background-color: #4CAF50;
+        }
+
+        .nav-buttons button#downloadWallpaperBtn:hover {
+            background-color: #388E3C;
+        }
+
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -142,21 +152,18 @@
             pointer-events: none;
         }
 
-        /* 早班樣式 */
         .day-cell.early {
             background-color: var(--early-bg);
             color: var(--early-text);
             border-color: var(--early-border); 
         }
 
-        /* 夜班樣式 */
         .day-cell.night {
             background-color: var(--night-bg);
             color: var(--night-text);
             border-color: var(--night-border); 
         }
 
-        /* 休假樣式 */
         .day-cell.rest {
             background-color: var(--rest-bg);
             color: var(--rest-text);
@@ -177,7 +184,6 @@
             text-align: center;
         }
 
-        /* 標籤色彩跟著班別走 */
         .early .shift-badge { background-color: var(--early-text); color: var(--early-bg); }
         .night .shift-badge { background-color: var(--night-text); color: var(--night-bg); }
         .rest .shift-badge { background-color: var(--rest-text); color: var(--rest-bg); }
@@ -189,7 +195,6 @@
             opacity: 0.9;
         }
 
-        /* 今天的樣式 */
         .day-cell.today {
             border: 3px solid var(--today-border) !important;
             box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
@@ -227,10 +232,9 @@
         .color-box.rest { background-color: var(--rest-bg); border-color: var(--rest-border); }
         .color-box.today { background-color: #fff; border: 3px solid var(--today-border); }
 
-        /* ========== 手機版專屬優化 ========== */
         @media (max-width: 600px) {
-            body { padding: 8px; } /* 減少外圍留白 */
-            .calendar-container { padding: 12px; } /* 減少容器內距 */
+            body { padding: 8px; }
+            .calendar-container { padding: 12px; }
             
             .header { 
                 flex-direction: column; 
@@ -242,41 +246,25 @@
             .header h2 { font-size: 1.3rem; text-align: center; }
             .shift-info { text-align: center; font-size: 0.8rem; }
             .nav-buttons { justify-content: center; }
-            .nav-buttons button { padding: 6px 12px; font-size: 0.85rem; }
+            .nav-buttons button { padding: 6px 10px; font-size: 0.8rem; }
             
-            .calendar-grid { gap: 3px; } /* 縮小格子間距 */
+            .calendar-grid { gap: 3px; }
             .weekday-header { font-size: 0.8rem; padding: 5px 0; }
             
             .day-cell {
-                aspect-ratio: auto; /* 取消正方形，改用內容撐高 */
-                min-height: 52px; /* 給予最小高度，確保美觀 */
+                aspect-ratio: auto;
+                min-height: 52px;
                 padding: 2px 0;
                 border-width: 1px;
             }
             
             .day-number { font-size: 0.95rem; }
-            
-            /* 縮小標籤，避免撐破格子 */
-            .shift-badge { 
-                font-size: 0.5rem; 
-                padding: 1px 3px; 
-                margin-top: 2px;
-                border-radius: 3px;
-            }
-            .shift-type-badge { 
-                font-size: 0.45rem; 
-                margin-top: 1px;
-            }
+            .shift-badge { font-size: 0.5rem; padding: 1px 3px; margin-top: 2px; border-radius: 3px; }
+            .shift-type-badge { font-size: 0.45rem; margin-top: 1px; }
             
             .day-cell.today { border-width: 2px !important; }
             
-            /* 圖例改為垂直排列，節省寬度 */
-            .legend { 
-                flex-direction: column; 
-                align-items: center; 
-                gap: 8px; 
-                font-size: 0.8rem; 
-            }
+            .legend { flex-direction: column; align-items: center; gap: 8px; font-size: 0.8rem; }
         }
     </style>
 </head>
@@ -290,6 +278,7 @@
             <button id="prevBtn">&lt; 上個月</button>
             <button id="todayBtn">回今天</button>
             <button id="nextBtn">下個月 &gt;</button>
+            <button id="downloadWallpaperBtn">📱 下載手機桌布</button>
         </div>
     </div>
 
@@ -440,6 +429,197 @@
             currentMonth = today.getMonth();
             renderCalendar(currentYear, currentMonth);
         });
+
+        // 綁定下載桌布按鈕
+        document.getElementById('downloadWallpaperBtn').addEventListener('click', generateMobileWallpaper);
+    }
+
+    // ================= 下載手機桌布功能 =================
+    async function generateMobileWallpaper() {
+        const btn = document.getElementById('downloadWallpaperBtn');
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ 生成中...';
+        btn.disabled = true;
+
+        const year = currentYear;
+        const month = currentMonth;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const firstDay = new Date(year, month, 1).getDay();
+        const shiftType = getShiftType(year, month);
+        const shiftName = shiftType === 'early' ? '早班' : '大夜班';
+        const shiftTime = shiftType === 'early' ? '07:00 ~ 19:00' : '19:00 ~ 07:00';
+
+        // 建立隱藏的桌布卡片容器
+        const cardDiv = document.createElement('div');
+        cardDiv.style.width = '360px';
+        cardDiv.style.backgroundColor = '#fdf8e7';
+        cardDiv.style.fontFamily = "'Microsoft JhengHei', 'PingFang TC', Arial, sans-serif";
+        cardDiv.style.padding = '24px 20px';
+        cardDiv.style.borderRadius = '28px';
+        cardDiv.style.boxSizing = 'border-box';
+        cardDiv.style.position = 'fixed';
+        cardDiv.style.left = '-9999px'; // 移出畫面外
+        cardDiv.style.top = '0';
+
+        // 標題區
+        const titleDiv = document.createElement('div');
+        titleDiv.style.textAlign = 'center';
+        titleDiv.style.marginBottom = '20px';
+        titleDiv.innerHTML = `
+            <div style="font-size: 26px; font-weight: 800; color: #2c3e50;">${year}年 ${month + 1}月 班表</div>
+            <div style="font-size: 14px; font-weight: 600; color: #555; background: #e9ecef; display: inline-block; padding: 4px 12px; border-radius: 12px; margin-top: 8px;">
+                本月班別：${shiftName} (${shiftTime})
+            </div>
+        `;
+        cardDiv.appendChild(titleDiv);
+
+        // 星期標題列
+        const weekRow = document.createElement('div');
+        weekRow.style.display = 'grid';
+        weekRow.style.gridTemplateColumns = 'repeat(7, 1fr)';
+        weekRow.style.gap = '4px';
+        weekRow.style.textAlign = 'center';
+        weekRow.style.marginBottom = '8px';
+        ['日', '一', '二', '三', '四', '五', '六'].forEach(day => {
+            const span = document.createElement('div');
+            span.textContent = day;
+            span.style.fontWeight = 'bold';
+            span.style.fontSize = '12px';
+            span.style.color = '#4361ee';
+            span.style.padding = '6px 0';
+            span.style.backgroundColor = '#f0f3ff';
+            span.style.borderRadius = '8px';
+            weekRow.appendChild(span);
+        });
+        cardDiv.appendChild(weekRow);
+
+        // 日期網格
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+        grid.style.gap = '5px';
+
+        // 填充空白格
+        for (let i = 0; i < firstDay; i++) {
+            const empty = document.createElement('div');
+            empty.style.height = '50px';
+            grid.appendChild(empty);
+        }
+
+        // 填充每一天
+        for (let day = 1; day <= daysInMonth; day++) {
+            const date = new Date(year, month, day);
+            const status = getShiftStatus(date);
+            
+            const cell = document.createElement('div');
+            cell.style.height = '50px';
+            cell.style.borderRadius = '8px';
+            cell.style.display = 'flex';
+            cell.style.flexDirection = 'column';
+            cell.style.justifyContent = 'center';
+            cell.style.alignItems = 'center';
+            cell.style.fontSize = '13px';
+            cell.style.fontWeight = 'bold';
+            cell.style.border = '1px solid transparent';
+
+            let cellBg, cellColor, cellText;
+
+            if (status === 'rest') {
+                cellBg = '#e8f5e9'; // 淺綠
+                cellColor = '#1b5e20'; // 深綠
+                cellText = '休';
+                cell.style.borderColor = '#a5d6a7';
+            } else {
+                if (shiftType === 'early') {
+                    cellBg = '#fff9c4'; // 淺黃
+                    cellColor = '#000000';
+                    cellText = '早';
+                    cell.style.borderColor = '#fdd835';
+                } else {
+                    cellBg = '#2a1e3f'; // 深紫
+                    cellColor = '#ffeb3b'; // 黃字
+                    cellText = '夜';
+                    cell.style.borderColor = '#4a3b63';
+                }
+            }
+
+            cell.style.backgroundColor = cellBg;
+            cell.style.color = cellColor;
+            cell.innerHTML = `<div>${day}</div><div style="font-size:10px; margin-top:2px;">${cellText}</div>`;
+            grid.appendChild(cell);
+        }
+        cardDiv.appendChild(grid);
+
+        // 圖例說明
+        const legendDiv = document.createElement('div');
+        legendDiv.style.marginTop = '20px';
+        legendDiv.style.display = 'flex';
+        legendDiv.style.justifyContent = 'space-around';
+        legendDiv.style.fontSize = '11px';
+        legendDiv.style.color = '#555';
+        legendDiv.style.backgroundColor = '#f1f5fe';
+        legendDiv.style.padding = '8px 12px';
+        legendDiv.style.borderRadius = '12px';
+        legendDiv.innerHTML = `
+            <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:12px; background:#fff9c4; border:1px solid #fdd835; border-radius:3px;"></span>早班</div>
+            <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:12px; background:#2a1e3f; border:1px solid #4a3b63; border-radius:3px;"></span>夜班</div>
+            <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:3px;"></span>休假</div>
+        `;
+        cardDiv.appendChild(legendDiv);
+
+        // 加入頁面並生成圖片
+        document.body.appendChild(cardDiv);
+
+        try {
+            const canvas = await html2canvas(cardDiv, { 
+                scale: 2.5, 
+                backgroundColor: '#fdf8e7',
+                borderRadius: '28px'
+            });
+            
+            document.body.removeChild(cardDiv);
+
+            // 建立 1080x1920 的手機桌布畫布
+            const wallpaperCanvas = document.createElement('canvas');
+            wallpaperCanvas.width = 1080;
+            wallpaperCanvas.height = 1920;
+            const ctx = wallpaperCanvas.getContext('2d');
+            
+            // 填滿背景色
+            ctx.fillStyle = '#fdf8e7';
+            ctx.fillRect(0, 0, 1080, 1920);
+
+            // 計算居中位置與縮放比例
+            const targetWidth = 1080 * 0.80; // 卡片佔手機寬度 80%
+            const scale = targetWidth / canvas.width;
+            const targetHeight = canvas.height * scale;
+            const x = (1080 - targetWidth) / 2;
+            const y = (1920 - targetHeight) / 2;
+
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, x, y, targetWidth, targetHeight);
+
+            // 觸發下載
+            wallpaperCanvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.download = `${year}年${month + 1}月_班表桌布.png`;
+                a.href = url;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }, 'image/png');
+
+        } catch (error) {
+            console.error('生成桌布失敗:', error);
+            if (document.body.contains(cardDiv)) {
+                document.body.removeChild(cardDiv);
+            }
+            alert('生成桌布失敗，請重試。');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
     }
 
     init();
