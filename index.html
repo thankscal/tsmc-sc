@@ -125,7 +125,7 @@
             font-size: 1.2rem;
             font-weight: 500;
             position: relative;
-            cursor: pointer; /* 改為手指游標，提示可點擊 */
+            cursor: default; /* 預設為一般游標 */
             transition: transform 0.1s, box-shadow 0.2s;
             border: 2px solid transparent;
             padding: 4px;
@@ -133,7 +133,12 @@
             min-width: 0;
         }
 
-        .day-cell:hover {
+        /* 休假或是手動調整過的日期，才顯示可點擊的手指游標 */
+        .day-cell.rest, .day-cell.manual-adjusted {
+            cursor: pointer;
+        }
+
+        .day-cell.rest:hover, .day-cell.manual-adjusted:hover {
             transform: scale(1.05);
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
@@ -345,7 +350,7 @@
         </div>
         <div class="legend-item" style="color:#ff5722;">
             <span style="font-size:1.2rem; line-height:1;">◌</span>
-            <span>手動調整 (點擊切換)</span>
+            <span>手動調整 (休假改上班)</span>
         </div>
     </div>
 </div>
@@ -415,32 +420,34 @@
         return cycle < SHIFT_CYCLE_MONTHS ? 'early' : 'night';
     }
 
-    // 點擊日期切換班別
-    function toggleShift(date) {
+    // 點擊日期處理邏輯
+    function handleCellClick(date) {
         const dateStr = getDateStr(date);
         const currentStatus = getShiftStatus(date);
         const originalStatus = getOriginalShiftStatus(date);
-        
-        // 切換狀態
-        let newStatus;
+        const isManuallyAdjusted = manualOverrides[dateStr] !== undefined;
+
+        // 如果原本就是上班，且不是手動改的，點擊不做任何事
+        if (currentStatus === 'work' && !isManuallyAdjusted) {
+            return; 
+        }
+
+        // 如果現在是休假，詢問是否變更為上班
         if (currentStatus === 'rest') {
-            newStatus = 'work';
-        } else {
-            newStatus = 'rest';
+            if (confirm('是否將此日變更為上班？')) {
+                manualOverrides[dateStr] = 'work';
+                localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(manualOverrides));
+                renderCalendar(currentYear, currentMonth);
+            }
+        } 
+        // 如果現在是上班，且是手動改的，詢問是否變更回休假
+        else if (currentStatus === 'work' && isManuallyAdjusted) {
+            if (confirm('是否將此日變更回休假？')) {
+                delete manualOverrides[dateStr];
+                localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(manualOverrides));
+                renderCalendar(currentYear, currentMonth);
+            }
         }
-
-        // 如果切換後的狀態等於原始狀態，移除手動覆蓋記錄
-        if (newStatus === originalStatus) {
-            delete manualOverrides[dateStr];
-        } else {
-            manualOverrides[dateStr] = newStatus;
-        }
-
-        // 儲存至 localStorage
-        localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(manualOverrides));
-
-        // 重新渲染當前月份
-        renderCalendar(currentYear, currentMonth);
     }
 
     function renderCalendar(year, month) {
@@ -488,7 +495,6 @@
                 cellClass += shiftType;
             }
             
-            // 如果是手動調整的日期，加上特殊 class
             if (isManualAdjusted) {
                 cellClass += ' manual-adjusted';
             }
@@ -515,7 +521,7 @@
 
             // 加入點擊事件
             dayCell.addEventListener('click', () => {
-                toggleShift(date);
+                handleCellClick(date);
             });
 
             grid.appendChild(dayCell);
@@ -628,7 +634,7 @@
             cell.style.fontWeight = 'bold';
             cell.style.border = '1px solid transparent';
 
-            // 如果手動調整，桌布上加個小圓點或虛線框
+            // 如果手動調整，桌布上加個虛線框
             if (isManualAdjusted) {
                 cell.style.border = '2px dashed #ff5722';
             }
