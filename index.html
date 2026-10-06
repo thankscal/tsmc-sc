@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -7,12 +7,22 @@
     <style>
         :root {
             --primary: #2c3e50;
-            --work-bg: #ffebee;
-            --work-text: #d32f2f;
-            --work-border: #ef9a9a;
-            --rest-bg: #e3f2fd; /* 淺藍色底 */
-            --rest-text: #1976d2;
-            --rest-border: #64b5f6; /* 淺藍色框線 */
+            
+            /* 早班配色：淺黃底 + 黑字 */
+            --early-bg: #fff9c4;
+            --early-text: #000000;
+            --early-border: #fdd835;
+            
+            /* 夜班配色：深紫黑底 + 黃字 */
+            --night-bg: #2a1e3f;
+            --night-text: #ffeb3b;
+            --night-border: #4a3b63;
+            
+            /* 休假配色：淺綠底 + 深綠字 */
+            --rest-bg: #e8f5e9;
+            --rest-text: #1b5e20;
+            --rest-border: #a5d6a7;
+            
             --today-border: #ff9800;
         }
 
@@ -130,14 +140,21 @@
             pointer-events: none;
         }
 
-        /* 上班樣式 */
-        .day-cell.work {
-            background-color: var(--work-bg);
-            color: var(--work-text);
-            border-color: var(--work-border); 
+        /* 早班樣式 */
+        .day-cell.early {
+            background-color: var(--early-bg);
+            color: var(--early-text);
+            border-color: var(--early-border); 
         }
 
-        /* 休假樣式 - 依照圖片淺藍色框線 */
+        /* 夜班樣式 */
+        .day-cell.night {
+            background-color: var(--night-bg);
+            color: var(--night-text);
+            border-color: var(--night-border); 
+        }
+
+        /* 休假樣式 */
         .day-cell.rest {
             background-color: var(--rest-bg);
             color: var(--rest-text);
@@ -158,27 +175,23 @@
             text-align: center;
         }
 
-        .work .shift-badge {
-            background-color: var(--work-text);
-            color: white;
-        }
-
-        .rest .shift-badge {
-            background-color: var(--rest-text);
-            color: white;
-        }
+        /* 標籤色彩跟著班別走 */
+        .early .shift-badge { background-color: var(--early-text); color: var(--early-bg); }
+        .night .shift-badge { background-color: var(--night-text); color: var(--night-bg); }
+        .rest .shift-badge { background-color: var(--rest-text); color: var(--rest-bg); }
 
         .shift-type-badge {
             font-size: 0.6rem;
             margin-top: 2px;
-            color: #666;
             font-weight: normal;
+            opacity: 0.9;
         }
 
         /* 今天的樣式 */
         .day-cell.today {
             border: 3px solid var(--today-border) !important;
-            box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+            z-index: 1;
         }
 
         .legend {
@@ -207,7 +220,8 @@
             border-style: solid;
         }
 
-        .color-box.work { background-color: var(--work-bg); border-color: var(--work-border); }
+        .color-box.early { background-color: var(--early-bg); border-color: var(--early-border); }
+        .color-box.night { background-color: var(--night-bg); border-color: var(--night-border); }
         .color-box.rest { background-color: var(--rest-bg); border-color: var(--rest-border); }
         .color-box.today { background-color: #fff; border: 3px solid var(--today-border); }
 
@@ -239,12 +253,16 @@
 
     <div class="legend">
         <div class="legend-item">
-            <div class="color-box work"></div>
-            <span>上班 (做二)</span>
+            <div class="color-box early"></div>
+            <span>早班 (07:00~19:00)</span>
+        </div>
+        <div class="legend-item">
+            <div class="color-box night"></div>
+            <span>大夜班 (19:00~07:00)</span>
         </div>
         <div class="legend-item">
             <div class="color-box rest"></div>
-            <span>休假 (休二 - 淺藍色)</span>
+            <span>休假 (淺綠)</span>
         </div>
         <div class="legend-item">
             <div class="color-box today"></div>
@@ -340,7 +358,15 @@
             const dayCell = document.createElement('div');
             
             const status = getShiftStatus(date);
-            dayCell.className = `day-cell ${status}`;
+            
+            // 根據狀態與當月班別決定 CSS class
+            let cellClass = 'day-cell ';
+            if (status === 'rest') {
+                cellClass += 'rest';
+            } else {
+                cellClass += shiftType; // 上班的話，看是 'early' 還是 'night'
+            }
+            dayCell.className = cellClass;
             
             if (isCurrentMonth && today.getDate() === day) {
                 dayCell.classList.add('today');
