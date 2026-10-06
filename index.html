@@ -125,8 +125,8 @@
             font-size: 1.2rem;
             font-weight: 500;
             position: relative;
-            cursor: default;
-            transition: transform 0.1s;
+            cursor: pointer; /* 改為手指游標，提示可點擊 */
+            transition: transform 0.1s, box-shadow 0.2s;
             border: 2px solid transparent;
             padding: 4px;
             box-sizing: border-box;
@@ -135,12 +135,19 @@
 
         .day-cell:hover {
             transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
 
         .day-cell.empty {
             background-color: #fafafa;
             border: none;
             pointer-events: none;
+        }
+
+        /* 手動調整過的日期，加上橘色虛線外框 */
+        .day-cell.manual-adjusted {
+            border: 3px dashed #ff5722;
+            box-shadow: 0 0 6px rgba(255, 87, 34, 0.4);
         }
 
         .day-cell.early {
@@ -167,10 +174,10 @@
         }
 
         .shift-badge {
-            font-size: 0.7rem;
-            margin-top: 4px;
-            padding: 2px 6px;
-            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 6px;
+            padding: 3px 8px;
+            border-radius: 6px;
             font-weight: bold;
             text-align: center;
         }
@@ -178,13 +185,6 @@
         .early .shift-badge { background-color: var(--early-text); color: var(--early-bg); }
         .night .shift-badge { background-color: var(--night-text); color: var(--night-bg); }
         .rest .shift-badge { background-color: var(--rest-text); color: var(--rest-bg); }
-
-        .shift-type-badge {
-            font-size: 0.6rem;
-            margin-top: 2px;
-            font-weight: normal;
-            opacity: 0.9;
-        }
 
         .day-cell.today {
             border: 3px solid var(--today-border) !important;
@@ -280,14 +280,14 @@
             
             .day-cell {
                 aspect-ratio: auto;
-                min-height: 52px;
+                min-height: 55px;
                 padding: 2px 0;
                 border-width: 1px;
             }
+            .day-cell.manual-adjusted { border-width: 2px; }
             
             .day-number { font-size: 0.95rem; }
-            .shift-badge { font-size: 0.5rem; padding: 1px 3px; margin-top: 2px; border-radius: 3px; }
-            .shift-type-badge { font-size: 0.45rem; margin-top: 1px; }
+            .shift-badge { font-size: 0.6rem; padding: 2px 5px; margin-top: 3px; border-radius: 4px; }
             
             .day-cell.today { border-width: 2px !important; }
             
@@ -320,7 +320,7 @@
         <!-- 日曆內容將由 JavaScript 動態生成 -->
     </div>
 
-    <!-- 下載按鈕區塊（移動到這裡） -->
+    <!-- 下載按鈕區塊 -->
     <div class="download-section">
         <button id="downloadWallpaperBtn" class="btn-download-wallpaper">📱 下載手機桌布</button>
     </div>
@@ -343,6 +343,10 @@
             <div class="color-box today"></div>
             <span>今天</span>
         </div>
+        <div class="legend-item" style="color:#ff5722;">
+            <span style="font-size:1.2rem; line-height:1;">◌</span>
+            <span>手動調整 (點擊切換)</span>
+        </div>
     </div>
 </div>
 
@@ -359,7 +363,21 @@
     const SHIFT_ANCHOR_MONTH = 11; // 11代表12月
     const SHIFT_CYCLE_MONTHS = 5;  // 每5個月輪替一次
 
+    // 【手動調整】儲存使用者手動修改的日期與班別
+    let manualOverrides = {};
+    const STORAGE_KEY_OVERRIDES = 'tsmc_manual_overrides';
+
     function init() {
+        // 載入手動調整記錄
+        const saved = localStorage.getItem(STORAGE_KEY_OVERRIDES);
+        if (saved) {
+            try {
+                manualOverrides = JSON.parse(saved);
+            } catch (e) {
+                manualOverrides = {};
+            }
+        }
+
         const today = new Date();
         currentYear = today.getFullYear();
         currentMonth = today.getMonth();
@@ -367,11 +385,26 @@
         bindEvents();
     }
 
-    function getShiftStatus(date) {
+    // 取得日期字串 (YYYY-MM-DD)
+    function getDateStr(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    // 取得原始做二休二的狀態
+    function getOriginalShiftStatus(date) {
         const diffTime = date.getTime() - BASE_DATE.getTime();
         const diffDays = Math.round(diffTime / MS_PER_DAY);
         let mod = ((diffDays % 4) + 4) % 4;
         return (mod === 0 || mod === 1) ? 'rest' : 'work';
+    }
+
+    // 取得最終狀態（包含手動覆蓋）
+    function getShiftStatus(date) {
+        const dateStr = getDateStr(date);
+        if (manualOverrides[dateStr]) {
+            return manualOverrides[dateStr];
+        }
+        return getOriginalShiftStatus(date);
     }
 
     function getShiftType(year, month) {
@@ -380,6 +413,34 @@
         const diff = monthIndex - anchorIndex;
         let cycle = ((diff % (SHIFT_CYCLE_MONTHS * 2)) + (SHIFT_CYCLE_MONTHS * 2)) % (SHIFT_CYCLE_MONTHS * 2);
         return cycle < SHIFT_CYCLE_MONTHS ? 'early' : 'night';
+    }
+
+    // 點擊日期切換班別
+    function toggleShift(date) {
+        const dateStr = getDateStr(date);
+        const currentStatus = getShiftStatus(date);
+        const originalStatus = getOriginalShiftStatus(date);
+        
+        // 切換狀態
+        let newStatus;
+        if (currentStatus === 'rest') {
+            newStatus = 'work';
+        } else {
+            newStatus = 'rest';
+        }
+
+        // 如果切換後的狀態等於原始狀態，移除手動覆蓋記錄
+        if (newStatus === originalStatus) {
+            delete manualOverrides[dateStr];
+        } else {
+            manualOverrides[dateStr] = newStatus;
+        }
+
+        // 儲存至 localStorage
+        localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(manualOverrides));
+
+        // 重新渲染當前月份
+        renderCalendar(currentYear, currentMonth);
     }
 
     function renderCalendar(year, month) {
@@ -418,6 +479,7 @@
             const dayCell = document.createElement('div');
             
             const status = getShiftStatus(date);
+            const isManualAdjusted = manualOverrides[getDateStr(date)] !== undefined;
             
             let cellClass = 'day-cell ';
             if (status === 'rest') {
@@ -425,6 +487,12 @@
             } else {
                 cellClass += shiftType;
             }
+            
+            // 如果是手動調整的日期，加上特殊 class
+            if (isManualAdjusted) {
+                cellClass += ' manual-adjusted';
+            }
+            
             dayCell.className = cellClass;
             
             if (isCurrentMonth && today.getDate() === day) {
@@ -438,13 +506,17 @@
 
             const badge = document.createElement('div');
             badge.className = 'shift-badge';
-            badge.textContent = status === 'work' ? '班' : '休';
+            if (status === 'work') {
+                badge.textContent = shiftType === 'early' ? '早班' : '夜班';
+            } else {
+                badge.textContent = '休';
+            }
             dayCell.appendChild(badge);
 
-            const typeBadge = document.createElement('div');
-            typeBadge.className = 'shift-type-badge';
-            typeBadge.textContent = status === 'work' ? (shiftType === 'early' ? '早' : '夜') : (shiftType === 'early' ? '早休' : '夜休');
-            dayCell.appendChild(typeBadge);
+            // 加入點擊事件
+            dayCell.addEventListener('click', () => {
+                toggleShift(date);
+            });
 
             grid.appendChild(dayCell);
         }
@@ -470,7 +542,6 @@
             renderCalendar(currentYear, currentMonth);
         });
 
-        // 綁定下載桌布按鈕
         document.getElementById('downloadWallpaperBtn').addEventListener('click', generateMobileWallpaper);
     }
 
@@ -489,7 +560,6 @@
         const shiftName = shiftType === 'early' ? '早班' : '大夜班';
         const shiftTime = shiftType === 'early' ? '07:00 ~ 19:00' : '19:00 ~ 07:00';
 
-        // 建立隱藏的桌布卡片容器
         const cardDiv = document.createElement('div');
         cardDiv.style.width = '360px';
         cardDiv.style.backgroundColor = '#fdf8e7';
@@ -498,10 +568,9 @@
         cardDiv.style.borderRadius = '28px';
         cardDiv.style.boxSizing = 'border-box';
         cardDiv.style.position = 'fixed';
-        cardDiv.style.left = '-9999px'; // 移出畫面外
+        cardDiv.style.left = '-9999px';
         cardDiv.style.top = '0';
 
-        // 標題區
         const titleDiv = document.createElement('div');
         titleDiv.style.textAlign = 'center';
         titleDiv.style.marginBottom = '20px';
@@ -513,7 +582,6 @@
         `;
         cardDiv.appendChild(titleDiv);
 
-        // 星期標題列
         const weekRow = document.createElement('div');
         weekRow.style.display = 'grid';
         weekRow.style.gridTemplateColumns = 'repeat(7, 1fr)';
@@ -533,23 +601,21 @@
         });
         cardDiv.appendChild(weekRow);
 
-        // 日期網格
         const grid = document.createElement('div');
         grid.style.display = 'grid';
         grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
         grid.style.gap = '5px';
 
-        // 填充空白格
         for (let i = 0; i < firstDay; i++) {
             const empty = document.createElement('div');
             empty.style.height = '50px';
             grid.appendChild(empty);
         }
 
-        // 填充每一天
         for (let day = 1; day <= daysInMonth; day++) {
             const date = new Date(year, month, day);
             const status = getShiftStatus(date);
+            const isManualAdjusted = manualOverrides[getDateStr(date)] !== undefined;
             
             const cell = document.createElement('div');
             cell.style.height = '50px';
@@ -562,35 +628,39 @@
             cell.style.fontWeight = 'bold';
             cell.style.border = '1px solid transparent';
 
+            // 如果手動調整，桌布上加個小圓點或虛線框
+            if (isManualAdjusted) {
+                cell.style.border = '2px dashed #ff5722';
+            }
+
             let cellBg, cellColor, cellText;
 
             if (status === 'rest') {
-                cellBg = '#e8f5e9'; // 淺綠
-                cellColor = '#1b5e20'; // 深綠
+                cellBg = '#e8f5e9';
+                cellColor = '#1b5e20';
                 cellText = '休';
-                cell.style.borderColor = '#a5d6a7';
+                if (!isManualAdjusted) cell.style.borderColor = '#a5d6a7';
             } else {
                 if (shiftType === 'early') {
-                    cellBg = '#fff9c4'; // 淺黃
+                    cellBg = '#fff9c4';
                     cellColor = '#000000';
-                    cellText = '早';
-                    cell.style.borderColor = '#fdd835';
+                    cellText = '早班';
+                    if (!isManualAdjusted) cell.style.borderColor = '#fdd835';
                 } else {
-                    cellBg = '#2a1e3f'; // 深紫
-                    cellColor = '#ffeb3b'; // 黃字
-                    cellText = '夜';
-                    cell.style.borderColor = '#4a3b63';
+                    cellBg = '#2a1e3f';
+                    cellColor = '#ffeb3b';
+                    cellText = '夜班';
+                    if (!isManualAdjusted) cell.style.borderColor = '#4a3b63';
                 }
             }
 
             cell.style.backgroundColor = cellBg;
             cell.style.color = cellColor;
-            cell.innerHTML = `<div>${day}</div><div style="font-size:10px; margin-top:2px;">${cellText}</div>`;
+            cell.innerHTML = `<div>${day}</div><div style="font-size:9px; margin-top:2px;">${cellText}</div>`;
             grid.appendChild(cell);
         }
         cardDiv.appendChild(grid);
 
-        // 圖例說明
         const legendDiv = document.createElement('div');
         legendDiv.style.marginTop = '20px';
         legendDiv.style.display = 'flex';
@@ -607,7 +677,6 @@
         `;
         cardDiv.appendChild(legendDiv);
 
-        // 加入頁面並生成圖片
         document.body.appendChild(cardDiv);
 
         try {
@@ -619,18 +688,15 @@
             
             document.body.removeChild(cardDiv);
 
-            // 建立 1080x1920 的手機桌布畫布
             const wallpaperCanvas = document.createElement('canvas');
             wallpaperCanvas.width = 1080;
             wallpaperCanvas.height = 1920;
             const ctx = wallpaperCanvas.getContext('2d');
             
-            // 填滿背景色
             ctx.fillStyle = '#fdf8e7';
             ctx.fillRect(0, 0, 1080, 1920);
 
-            // 計算居中位置與縮放比例
-            const targetWidth = 1080 * 0.80; // 卡片佔手機寬度 80%
+            const targetWidth = 1080 * 0.80;
             const scale = targetWidth / canvas.width;
             const targetHeight = canvas.height * scale;
             const x = (1080 - targetWidth) / 2;
@@ -638,7 +704,6 @@
 
             ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, x, y, targetWidth, targetHeight);
 
-            // 觸發下載
             wallpaperCanvas.toBlob(blob => {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
